@@ -1,0 +1,17 @@
+# Compiled output
+main
+*.exe
+
+# macOS debug symbols
+*.dSYM/
+
+# Runtime data files
+students.csv
+attendance.csv
+
+# VS Code temp files
+tempCodeRunnerFile.c
+.vscode/
+
+# macOS system files
+.DS_Store

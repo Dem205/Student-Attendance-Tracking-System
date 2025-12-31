@@ -4,6 +4,34 @@
 #include <time.h>
 #include <ctype.h>
 
+void ensureStudentsFileExists() {
+    FILE *fp = fopen("students.csv", "r");
+    if (fp == NULL) {
+        fp = fopen("students.csv", "w");
+        if (fp != NULL) {
+            fprintf(fp, "Name,Matric,Department\n");
+            fclose(fp);
+        }
+    } else {
+        fclose(fp);
+    }
+}
+
+void ensureAttendanceFileExists() {
+    FILE *fp = fopen("attendance.csv", "r");
+    if (fp == NULL) {
+        fp = fopen("attendance.csv", "w");
+        if (fp != NULL) {
+            fprintf(fp, "Date,Name,Matric,Department,Status\n");
+            fclose(fp);
+        }
+    } else {
+        fclose(fp);
+    }
+}
+
+
+
 void addStudent() {
     FILE *fp;
     char name[50];
@@ -11,7 +39,7 @@ void addStudent() {
     char matric_num[10];
     char choice;
 
-    fp = fopen("students.csv", "a"); // Open CSV in append mode
+    fp = fopen("students.csv", "a"); 
     if (fp == NULL) {
         printf("Error opening file.\n");
         return;
@@ -19,7 +47,7 @@ void addStudent() {
 
     do {
         printf("Enter student name: ");
-        scanf(" %[^\n]s", name); // allows spaces
+        scanf(" %[^\n]s", name);
 
         printf("Enter student matric number: ");
         scanf("%s", matric_num);
@@ -64,7 +92,7 @@ void markAttendance() {
     printf("Mark attendance for date: %s\n", date);
     printf("Enter P for Present, A for Absent.\n");
 
-    while(fscanf(fpStudents, "%[^,],%[^,],%[^\n]\n", name, matric_num, department) != EOF) {
+    while(fscanf(fpStudents, "%[^,],%[^,],%[^\n]\n", name,matric_num,department) != EOF) {
         do {
             printf("%s (%s, %s): ", name, matric_num, department);
             scanf(" %c", &att);
@@ -103,6 +131,8 @@ void viewAttendanceSummary() {
 }
 
 int main() {
+    ensureStudentsFileExists();
+    ensureAttendanceFileExists();
     int choice;
 
     do {
