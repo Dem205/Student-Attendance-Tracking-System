@@ -43,6 +43,23 @@ int endsWith(const char *str, const char *suffix) {
   return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
 }
 
+// Helper function to get next CSV token
+char* getNextToken(char **str, const char *delim) {
+  if (*str == NULL) return NULL;
+  
+  char *start = *str;
+  char *end = strstr(start, delim);
+  
+  if (end) {
+    *end = '\0';
+    *str = end + strlen(delim);
+  } else {
+    *str = NULL;
+  }
+  
+  return start;
+}
+
 // Helper to list valid attendance files
 void listAttendanceFiles(char files[100][100], int *fileCount) {
   DIR *d;
@@ -127,30 +144,32 @@ void getAttendanceStats(int *unique_sessions,
     fgets(line, sizeof(line), fp);
 
     while (fgets(line, sizeof(line), fp)) {
-      char name[50], matric[20], dept[30], status_char;
+      char matric[20], status_char;
       // Format expected: Name,Matric,Dept,Status (Char P/A)
 
+      char lineCopy[256];
+      strcpy(lineCopy, line);
+      char *ptr = lineCopy;
       char *token;
-      char *rest = line;
 
       // Name (skip)
-      token = strsep(&rest, ",");
+      token = getNextToken(&ptr, ",");
       if (!token)
         continue;
 
       // Matric
-      token = strsep(&rest, ",");
+      token = getNextToken(&ptr, ",");
       if (!token)
         continue;
       strcpy(matric, token);
 
       // Dept (skip)
-      token = strsep(&rest, ",");
+      token = getNextToken(&ptr, ",");
       if (!token)
         continue;
 
       // Status
-      token = strsep(&rest, ",");
+      token = getNextToken(&ptr, ",");
       if (!token)
         continue;
       status_char = token[0];
@@ -339,7 +358,7 @@ void viewAttendanceSummary() {
   } while (!valid_choice);
 
   FILE *fp;
-  char name[50], matric_num[20], department[30]; // Increased buffer size
+  char name[50], matric_num[20], department[30];
   char att;
   char buffer[200];
   char date[11], time_str[9];
@@ -357,32 +376,30 @@ void viewAttendanceSummary() {
   printf("\n=== ATTENDANCE SUMMARY ===\n");
   printf("Date: %s | Time: %s\n\n", date, time_str);
   printf("%-25s %-12s %-18s %-10s\n", "Name", "Matric", "Department", "Status");
-  printf("---------------------------------------------------------------------"
-         "--\n");
+  printf("-----------------------------------------------------------------------\n");
 
-  // Rewritten to properly parse using sscanf or tokenizing, robustly
   while (fgets(buffer, sizeof(buffer), fp)) {
-    // Parse the CSV line: Name,Matric,Department,Status
-
-    char *ptr = buffer;
+    char lineCopy[256];
+    strcpy(lineCopy, buffer);
+    char *ptr = lineCopy;
     char *token;
 
     // Name
-    token = strsep(&ptr, ",");
+    token = getNextToken(&ptr, ",");
     if (token)
       strcpy(name, token);
     else
       continue;
 
     // Matric
-    token = strsep(&ptr, ",");
+    token = getNextToken(&ptr, ",");
     if (token)
       strcpy(matric_num, token);
     else
       continue;
 
     // Dept
-    token = strsep(&ptr, ",");
+    token = getNextToken(&ptr, ",");
     if (token)
       strcpy(department, token);
     else
@@ -514,7 +531,6 @@ int main() {
       markAttendance();
       break;
     case 3:
-      // Use user's requested function
       viewAttendanceSummary();
       break;
     case 4:
