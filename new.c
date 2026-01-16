@@ -43,6 +43,17 @@ int endsWith(const char *str, const char *suffix) {
   return strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0;
 }
 
+// Check if string starts with prefix
+int startsWith(const char *str, const char *prefix) {
+  if (!str || !prefix)
+    return 0;
+  size_t lenstr = strlen(str);
+  size_t lenprefix = strlen(prefix);
+  if (lenprefix > lenstr)
+    return 0;
+  return strncmp(str, prefix, lenprefix) == 0;
+}
+
 // Helper function to get next CSV token
 char* getNextToken(char **str, const char *delim) {
   if (*str == NULL) return NULL;
@@ -60,8 +71,8 @@ char* getNextToken(char **str, const char *delim) {
   return start;
 }
 
-// Helper to list valid attendance files
-void listAttendanceFiles(char files[100][100], int *fileCount) {
+// Helper to list valid attendance files for a specific course
+void listAttendanceFiles(char files[100][100], int *fileCount, const char *courseCode) {
   DIR *d;
   struct dirent *dir;
   *fileCount = 0;
@@ -69,12 +80,25 @@ void listAttendanceFiles(char files[100][100], int *fileCount) {
   d = opendir(".");
   if (d) {
     while ((dir = readdir(d)) != NULL) {
-      // Check for prefix "attendance_" and suffix ".csv"
-      // but NOT the generic "attendance.csv" if it exists (length check)
-      if (strncmp(dir->d_name, "attendance_", 11) == 0 &&
-          endsWith(dir->d_name, ".csv") &&
-          strlen(dir->d_name) > 15) { // Ensure it has timestamps
+      int match = 1;
+      
+      // Filter by course code if provided
+      if (courseCode && strlen(courseCode) > 0) {
+        char prefix[100];
+        sprintf(prefix, "%s-", courseCode);
+        if (!startsWith(dir->d_name, prefix)) {
+          match = 0;
+        }
+      }
 
+      // Basic validity checks
+      if (match) {
+        if (!endsWith(dir->d_name, ".csv")) match = 0;
+        else if (strlen(dir->d_name) < 24) match = 0; // Min length for code-YYYY-MM-DD_HH-MM-SS.csv
+        else if (strcmp(dir->d_name, "students.csv") == 0) match = 0;
+      }
+
+      if (match) {
         strcpy(files[*fileCount], dir->d_name);
         (*fileCount)++;
         if (*fileCount >= 100)
@@ -84,11 +108,22 @@ void listAttendanceFiles(char files[100][100], int *fileCount) {
     closedir(d);
   }
 
-  // Sort files (simple bubble sort ensures chronological order if naming is
-  // YYYY-MM-DD...)
+  // Sort files by Date Descending (Latest first)[I believe we discussed this ]
+  // Compare the timestamp part: YYYY-MM-DD_HH-MM-SS.csv (Last 23 chars)
   for (int i = 0; i < *fileCount - 1; i++) {
     for (int j = 0; j < *fileCount - i - 1; j++) {
-      if (strcmp(files[j], files[j + 1]) > 0) {
+      char *f1 = files[j];
+      char *f2 = files[j + 1];
+      
+      // Safety check for lengths
+      if (strlen(f1) < 24 || strlen(f2) < 24) continue;
+
+      char *s1 = f1 + strlen(f1) - 23; 
+      char *s2 = f2 + strlen(f2) - 23;
+      
+      // strcmp(s1, s2) returns < 0 if s1 is "older/smaller" than s2.
+      // We want Descending (Newest first), so if s1 < s2, we need to swap s1 to be after s2.
+      if (strcmp(s1, s2) < 0) {
         char temp[100];
         strcpy(temp, files[j]);
         strcpy(files[j], files[j + 1]);
@@ -99,21 +134,30 @@ void listAttendanceFiles(char files[100][100], int *fileCount) {
 }
 
 void extractDateTimeFromFilename(char *filename, char *date, char *time_str) {
-  // filename format expected: attendance_YYYY-MM-DD_HH-MM-SS.csv
-  //                         0123456789012345678901234567890
-  //                                   ^ 11
-  if (strlen(filename) < 30) {
+  // filename format expected: COURSECODE-YYYY-MM-DD_HH-MM-SS.csv
+  // Date time part is always at the end: YYYY-MM-DD_HH-MM-SS.csv (23 chars)
+  size_t len = strlen(filename);
+  if (len < 24) { // Min length check
     strcpy(date, "Unknown");
     strcpy(time_str, "Unknown");
     return;
   }
 
-  // Extract Date: YYYY-MM-DD (10 chars starting at index 11)
-  strncpy(date, filename + 11, 10);
+  // Extract Date: YYYY-MM-DD (10 chars)
+  // Position found by going back 23 chars from .csv end
+  // Filename is ".....YYYY-MM-DD_HH-MM-SS.csv"
+  // .csv is 4 chars. Time is 8 chars. _ is 1. Date is 10.
+  // Total suffix length = 4+8+1+10 = 23 chars.
+  // Start index = len - 23
+  
+  char *start = filename + len - 23;
+
+  strncpy(date, start, 10);
   date[10] = '\0';
 
-  // Extract Time: HH-MM-SS (8 chars starting at index 22)
-  strncpy(time_str, filename + 22, 8);
+  // Extract Time: HH-MM-SS (8 chars)
+  // Start index = len - 12
+  strncpy(time_str, start + 11, 8);
   time_str[8] = '\0';
 
   // Replace '-' in time with ':' for display
@@ -126,11 +170,11 @@ void extractDateTimeFromFilename(char *filename, char *date, char *time_str) {
 // Calculate scores by reading ALL attendance files
 void getAttendanceStats(int *unique_sessions,
                         struct StudentScore *student_scores,
-                        int *student_count) {
+                        int *student_count, const char *courseCode) {
 
   char files[100][100];
   int fileCount = 0;
-  listAttendanceFiles(files, &fileCount);
+  listAttendanceFiles(files, &fileCount, courseCode);
   *unique_sessions = fileCount;
   *student_count = 0;
 
@@ -200,12 +244,18 @@ void getAttendanceStats(int *unique_sessions,
 }
 
 void markAttendance() {
+  char courseCode[50];
+  printf("\nEnter Course Code: ");
+  if (fgets(courseCode, sizeof(courseCode), stdin) == NULL) return;
+  courseCode[strcspn(courseCode, "\n")] = 0;
+  if (strlen(courseCode) == 0) return;
+
   // 1. Check Limits
   int unique_sessions = 0;
   struct StudentScore student_scores[100];
   int student_count_stats = 0;
 
-  getAttendanceStats(&unique_sessions, student_scores, &student_count_stats);
+  getAttendanceStats(&unique_sessions, student_scores, &student_count_stats, courseCode);
 
   if (unique_sessions >= MAX_SESSIONS) {
     printf("\n[ERROR] Maximum number of sessions (%d) reached.\n",
@@ -220,8 +270,8 @@ void markAttendance() {
   time_t t = time(NULL);
   struct tm tm = *localtime(&t);
   char filename[100];
-  // Format: attendance_YYYY-MM-DD_HH-MM-SS.csv
-  sprintf(filename, "attendance_%04d-%02d-%02d_%02d-%02d-%02d.csv",
+  // Format: COURSECODE-YYYY-MM-DD_HH-MM-SS.csv
+  sprintf(filename, "%s-%04d-%02d-%02d_%02d-%02d-%02d.csv", courseCode,
           tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
           tm.tm_sec);
 
@@ -307,7 +357,7 @@ void markAttendance() {
     // Need to re-calculate including just-added session
     // Quickest way: just iterate the students we just processed or re-run stats
     // Let's re-run stats for accuracy
-    getAttendanceStats(&unique_sessions, student_scores, &student_count_stats);
+    getAttendanceStats(&unique_sessions, student_scores, &student_count_stats, courseCode);
 
     FILE *fpStudentsRe = fopen("students.csv", "r");
     fgets(buffer, sizeof(buffer), fpStudentsRe);
@@ -326,11 +376,19 @@ void markAttendance() {
 }
 
 void viewAttendanceSummary() {
+  /*
+  char courseCode[50];
+  printf("\nEnter Course Code: ");
+  if (fgets(courseCode, sizeof(courseCode), stdin) == NULL) return;
+  courseCode[strcspn(courseCode, "\n")] = 0;
+  */
+
   char files[100][100];
   int fileCount = 0;
   int choice;
 
-  listAttendanceFiles(files, &fileCount);
+  // Pass NULL to list ALL attendance files
+  listAttendanceFiles(files, &fileCount, NULL);
 
   if (fileCount == 0) {
     printf("\nNo attendance records found.\n");
@@ -341,7 +399,22 @@ void viewAttendanceSummary() {
   for (int i = 0; i < fileCount; i++) {
     char date[11], time_str[9];
     extractDateTimeFromFilename(files[i], date, time_str);
-    printf("%d. %s at %s\n", i + 1, date, time_str);
+    
+    // Extract Course Code
+    // Filename: CODE-YYYY...
+    // We know the suffixes are 24 chars (including the dash before date? No, suffix is 23: YYYY...)
+    // Suffix start index: len - 23.
+    // Separator index: len - 24.
+    char courseCode[50] = "Unknown";
+    size_t len = strlen(files[i]);
+    if (len >= 24) {
+      size_t codeLen = len - 24;
+      if (codeLen > 49) codeLen = 49;
+      strncpy(courseCode, files[i], codeLen);
+      courseCode[codeLen] = '\0';
+    }
+
+    printf("%d. [%s] %s at %s\n", i + 1, courseCode, date, time_str);
   }
 
   // Safety check
